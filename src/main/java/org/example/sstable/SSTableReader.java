@@ -1,16 +1,99 @@
 package org.example.sstable;
 
+import org.example.index.BloomFilter;
 import org.example.index.SparseIndex;
 
-import java.io.DataInputStream;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class SSTableReader {
+
+    public SSTableMetadata loadMetadata(Path file) throws IOException {
+
+        BloomFilter bloomFilter = new BloomFilter(1);
+        SparseIndex sparseIndex = new SparseIndex();
+
+        long offset = 0;
+        int count = 0;
+
+        try (RandomAccessFile in = new RandomAccessFile(file.toFile(), "r")) {
+
+            while (in.getFilePointer() < in.length()) {
+
+                int keyLength = in.readInt();
+                int valueLength = in.readInt();
+                boolean isTombstone = in.readBoolean();
+
+                byte[] keyBytes = new byte[keyLength];
+                in.readFully(keyBytes);
+
+                if (!isTombstone) {
+                    in.skipBytes(valueLength);
+                }
+
+                String key = new String(keyBytes, StandardCharsets.UTF_8);
+
+                bloomFilter.add(key);
+
+                if (count % 100 == 0) {
+                    sparseIndex.add(key, offset);
+                }
+
+                offset +=
+                        4L +
+                                4L +
+                                1L +
+                                keyLength +
+                                (isTombstone ? 0 : valueLength);
+
+                count++;
+            }
+        }
+
+        int numEntries = Math.max(1, count);
+        bloomFilter = new BloomFilter(numEntries);
+
+        offset = 0;
+        count = 0;
+
+        try (RandomAccessFile in = new RandomAccessFile(file.toFile(), "r")) {
+
+            while (in.getFilePointer() < in.length()) {
+
+                int keyLength = in.readInt();
+                int valueLength = in.readInt();
+                boolean isTombstone = in.readBoolean();
+
+                byte[] keyBytes = new byte[keyLength];
+                in.readFully(keyBytes);
+
+                if (!isTombstone) {
+                    in.skipBytes(valueLength);
+                }
+
+                String key = new String(keyBytes, StandardCharsets.UTF_8);
+
+                bloomFilter.add(key);
+
+                if (count % 100 == 0) {
+                    sparseIndex.add(key, offset);
+                }
+
+                offset +=
+                        4L +
+                                4L +
+                                1L +
+                                keyLength +
+                                (isTombstone ? 0 : valueLength);
+
+                count++;
+            }
+        }
+
+        return new SSTableMetadata(bloomFilter, sparseIndex);
+    }
 
     public SSTableEntry get(Path file, String targetKey, SSTableMetadata metadata) throws IOException{
 
