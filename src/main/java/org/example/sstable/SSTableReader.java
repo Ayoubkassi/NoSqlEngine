@@ -12,7 +12,7 @@ import java.nio.file.Path;
 
 public class SSTableReader {
 
-    public byte[] get(Path file, String targetKey, SSTableMetadata metadata) throws IOException{
+    public SSTableEntry get(Path file, String targetKey, SSTableMetadata metadata) throws IOException{
 
         // Step 1: Check Bloom Filter
         if (!metadata.bloomFilter().mightContain(targetKey)) {
@@ -37,6 +37,7 @@ public class SSTableReader {
 
                 int keyLength = in.readInt();
                 int valueLength = in.readInt();
+                boolean isTombstone = in.readBoolean();
 
                 byte[] keyBytes = new byte[keyLength];
                 byte[] value = new byte[valueLength];
@@ -49,7 +50,9 @@ public class SSTableReader {
                 int comparison = key.compareTo(targetKey);
 
                 if (comparison == 0) {
-                    return value;
+                    return isTombstone
+                            ? SSTableEntry.deleted()
+                            : SSTableEntry.value(value);
                 }
 
                 // Keys are sorted, so we can stop early

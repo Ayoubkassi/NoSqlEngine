@@ -1,6 +1,8 @@
 package org.example.core;
 
+import org.example.memtable.MemTableEntry;
 import org.example.memtable.Memtable;
+import org.example.sstable.SSTableEntry;
 import org.example.sstable.SSTableHandle;
 import org.example.sstable.SSTableMetadata;
 import org.example.sstable.SSTableReader;
@@ -14,7 +16,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MiniLSM implements AutoCloseable{
+public class MiniLSM implements AutoCloseable {
 
     private final Path directory;
     private final Options options;
@@ -29,97 +31,151 @@ public class MiniLSM implements AutoCloseable{
     private int nextTableId = 1;
 
     public MiniLSM(Path directory, Options options) throws IOException {
+
         this.directory = directory;
         this.options = options;
 
-        Files.createDirectory(directory);
+        Files.createDirectories(directory);
 
         this.memTable = new Memtable();
         this.writer = new SSTableWriter();
         this.reader = new SSTableReader();
 
-        Path walpath = directory.resolve("wal.log");
-        this.wal = new WriteAheadLog(walpath);
+        Path walPath = directory.resolve("wal.log");
+        this.wal = new WriteAheadLog(walPath);
+
+        // Recover previous operations from WAL
+        recover();
     }
 
     private void recover() throws IOException {
+
         Path walPath = directory.resolve("wal.log");
 
-        if(!Files.exists(walPath)){
+        if (!Files.exists(walPath)) {
             return;
         }
 
         WriteAheadLog.replay(
                 String.valueOf(walPath),
                 entry -> {
-                    if( entry.operation() == Operation.PUT ){
-                        memTable.put(entry.key(), entry.value());
-                    }else if( entry.operation() == Operation.DELETE ){
-                        memTable.delete(entry.key());
+
+                    if (entry.operation() == Operation.PUT) {
+
+                        memTable.put(
+                                entry.key(),
+                                entry.value()
+                        );
+
+                    } else if (entry.operation() == Operation.DELETE) {
+
+                        memTable.delete(
+                                entry.key()
+                        );
                     }
                 }
         );
     }
 
-    public synchronized void put(String key , byte[] value) throws IOException {
+    public synchronized void put(
+            String key,
+            byte[] value
+    ) throws IOException {
 
-//        always write to wall first
+        // 1. Write to WAL first
         wal.put(key, value);
-//        update memtable
-        memTable.put(key,value);
-        if(memTable.size() >= options.memTableMaxEntries()){
+
+        // 2. Update MemTable
+        memTable.put(key, value);
+
+        // 3. Flush if MemTable is full
+        if (memTable.size() >= options.memTableMaxEntries()) {
             flush();
         }
     }
 
     public synchronized byte[] get(String key) throws IOException {
-        byte[] value = memTable.get(key);
 
-        if(value != null)
-            return value;
+        MemTableEntry entry = memTable.get(key);
 
-        for(int i =tables.size() -1; i>= 0; i--){
+        if (entry != null) {
+
+            if (entry.tombstone()) {
+                return null;
+            }
+
+            return entry.value();
+        }
+
+        for (int i = tables.size() - 1; i >= 0; i--) {
+
             SSTableHandle table = tables.get(i);
 
-            value = reader.get(
+            SSTableEntry sstableEntry = reader.get(
                     table.path(),
                     key,
                     table.metadata()
             );
 
-            if (value != null) {
-                return value;
+            if (sstableEntry != null) {
+                if (sstableEntry.tombstone()) {
+                    return null;
+                }
+                return sstableEntry.value();
             }
         }
+
         return null;
     }
 
-    public synchronized void delete(String key) throws IOException {
+    public synchronized void delete(String key)
+            throws IOException {
 
+        // 1. Write deletion to WAL
         wal.delete(key);
 
+        // 2. Store tombstone in MemTable
         memTable.delete(key);
-
-        // Tombstones will be implemented later. (special form so in compaction we remove it)
     }
 
     private void flush() throws IOException {
-        if(memTable.isEmpty())
+
+        if (memTable.isEmpty()) {
             return;
+        }
 
-        Path file = directory.resolve(String.format("sstable-%06d.data", nextTableId++));
+        Path file = directory.resolve(
+                String.format(
+                        "sstable-%06d.data",
+                        nextTableId++
+                )
+        );
 
-        SSTableMetadata metadata = writer.write(file, memTable.entries());
+        // Write MemTable -> SSTable
+        SSTableMetadata metadata =
+                writer.write(
+                        file,
+                        memTable.entries()
+                );
 
-        tables.add(new SSTableHandle(file, metadata));
+        // Keep the new SSTable
+        tables.add(
+                new SSTableHandle(
+                        file,
+                        metadata
+                )
+        );
 
+        // Create a fresh MemTable
         memTable = new Memtable();
 
+        // WAL can now be cleared
         wal.clear();
     }
 
     @Override
     public void close() throws Exception {
+
         flush();
 
         wal.close();
