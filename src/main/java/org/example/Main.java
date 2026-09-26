@@ -1,5 +1,7 @@
 package org.example;
 
+import org.example.core.MiniLSM;
+import org.example.core.Options;
 import org.example.memtable.Memtable;
 import org.example.sstable.SSTableMetadata;
 import org.example.sstable.SSTableReader;
@@ -11,27 +13,23 @@ import java.nio.file.Path;
 
 
 public class Main {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
 
-        Memtable memTable = new Memtable();
+        Path directory = Path.of("/Users/a.kassi/Desktop/NoSQLEngine/data");
 
-        memTable.put("user:1", "Ayoub".getBytes());
-        memTable.put("user:2", "Sara".getBytes());
-        memTable.put("user:3", "John".getBytes());
+        Options options = new Options(3);
 
-        Path file = Path.of("/Users/a.kassi/Desktop/NoSQLEngine/data/sstable-00001.data");
+        try (MiniLSM db = new MiniLSM(directory, options)) {
 
-        SSTableWriter writer = new SSTableWriter();
+            db.put("user:1", "Ayoub".getBytes());
+            db.put("user:2", "Sara".getBytes());
+            db.put("user:3", "John".getBytes());
 
-        SSTableMetadata metadata =
-                writer.write(file, memTable.entries());
+            byte[] value = db.get("user:1");
 
-        SSTableReader reader = new SSTableReader();
-
-        byte[] result = reader.get(file, "user:2", metadata);
-
-        System.out.println(
-                new String(result, StandardCharsets.UTF_8)
-        );
+            System.out.println(
+                    new String(value, StandardCharsets.UTF_8)
+            );
+        }
     }
 }
