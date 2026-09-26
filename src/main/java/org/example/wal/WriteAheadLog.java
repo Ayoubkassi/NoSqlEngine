@@ -2,19 +2,28 @@ package org.example.wal;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
-public class WriteAheadLog implements Closeable {
-    private final DataOutputStream out;
+public class WriteAheadLog implements AutoCloseable {
 
-    public WriteAheadLog(String filePath) throws IOException {
+    private DataOutputStream out;
+    private final Path path;
+
+    public WriteAheadLog(Path path) throws IOException {
+
+        this.path = path;
+        Files.createDirectories(path.getParent());
+
         this.out = new DataOutputStream(
             new BufferedOutputStream(
-                    new FileOutputStream(filePath)
+                    new FileOutputStream(path.toFile(),true)
             )
         );
     }
 
-    public void put(String key , byte[] val) throws IOException{
+    public synchronized void put(String key , byte[] val) throws IOException{
         out.writeByte(1); // operation : PUT
         writeString(key);
         out.writeInt(val.length);
@@ -22,17 +31,37 @@ public class WriteAheadLog implements Closeable {
         out.flush();
     }
 
+    public synchronized void delete(String key) throws IOException {
+        out.writeByte(2); //for delete
+        writeString(key);
+        out.flush();
+    }
+
+
+    // CLEAR THE WALL AFTER IT'S CONTENTS HAVE BEEN
+    // SUCCESSFULLY FLUSHED TO AN SSTable
+    public synchronized void clear() throws IOException{
+        out.flush();
+        out.close();
+
+        Files.newOutputStream(
+                path,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING
+        ).close();
+
+        out = new DataOutputStream(
+                new BufferedOutputStream(
+                        new FileOutputStream(path.toFile(), true)
+                )
+        );
+    }
+
     private void writeString(String value) throws IOException{
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
 
         out.writeInt(bytes.length);
         out.write(bytes);
-    }
-
-    public void delete(String key) throws IOException {
-        out.writeByte(2); //for delete
-        writeString(key);
-        out.flush();
     }
 
     // the main function is the replay one that take the file and write to the memtable

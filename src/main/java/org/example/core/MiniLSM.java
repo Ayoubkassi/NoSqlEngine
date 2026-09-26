@@ -5,6 +5,8 @@ import org.example.sstable.SSTableHandle;
 import org.example.sstable.SSTableMetadata;
 import org.example.sstable.SSTableReader;
 import org.example.sstable.SSTableWriter;
+import org.example.wal.Operation;
+import org.example.wal.WriteAheadLog;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -17,10 +19,10 @@ public class MiniLSM implements AutoCloseable{
     private final Path directory;
     private final Options options;
 
-    private Memtable memTable = new Memtable();
-
-    private final SSTableWriter writer = new SSTableWriter();
-    private final SSTableReader reader = new SSTableReader();
+    private Memtable memTable;
+    private final SSTableWriter writer;
+    private final SSTableReader reader;
+    private final WriteAheadLog wal;
 
     private final List<SSTableHandle> tables = new ArrayList<>();
 
@@ -31,9 +33,39 @@ public class MiniLSM implements AutoCloseable{
         this.options = options;
 
         Files.createDirectory(directory);
+
+        this.memTable = new Memtable();
+        this.writer = new SSTableWriter();
+        this.reader = new SSTableReader();
+
+        Path walpath = directory.resolve("wal.log");
+        this.wal = new WriteAheadLog(walpath);
+    }
+
+    private void recover() throws IOException {
+        Path walPath = directory.resolve("wal.log");
+
+        if(!Files.exists(walPath)){
+            return;
+        }
+
+        WriteAheadLog.replay(
+                String.valueOf(walPath),
+                entry -> {
+                    if( entry.operation() == Operation.PUT ){
+                        memTable.put(entry.key(), entry.value());
+                    }else if( entry.operation() == Operation.DELETE ){
+                        memTable.delete(entry.key());
+                    }
+                }
+        );
     }
 
     public synchronized void put(String key , byte[] value) throws IOException {
+
+//        always write to wall first
+        wal.put(key, value);
+//        update memtable
         memTable.put(key,value);
         if(memTable.size() >= options.memTableMaxEntries()){
             flush();
@@ -62,7 +94,10 @@ public class MiniLSM implements AutoCloseable{
         return null;
     }
 
-    public synchronized void delete(String key){
+    public synchronized void delete(String key) throws IOException {
+
+        wal.delete(key);
+
         memTable.delete(key);
 
         // Tombstones will be implemented later. (special form so in compaction we remove it)
@@ -79,10 +114,14 @@ public class MiniLSM implements AutoCloseable{
         tables.add(new SSTableHandle(file, metadata));
 
         memTable = new Memtable();
+
+        wal.clear();
     }
 
     @Override
     public void close() throws Exception {
         flush();
+
+        wal.close();
     }
 }
