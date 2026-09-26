@@ -1,5 +1,6 @@
 package org.example.memtable;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class Memtable {
@@ -25,5 +26,9 @@ public class Memtable {
 
     public boolean isEmpty(){
         return data.isEmpty();
+    }
+
+    public Map<String, byte[]> entries() {
+        return data;
     }
 }
