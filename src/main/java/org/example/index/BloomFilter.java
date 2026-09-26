@@ -24,7 +24,7 @@ public class BloomFilter {
         }
     }
 
-    public boolean mightContains(String key){
+    public boolean mightContain(String key){
         byte[] bytes = key.getBytes(StandardCharsets.UTF_8);
         for(int i=0 ; i < numHashFunctions; i++){
             int hash = hash(bytes,i);
