@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -193,6 +194,44 @@ class MiniLSMTest {
             assertArrayEquals(
                     "Emma".getBytes(StandardCharsets.UTF_8),
                     db.get("user5")
+            );
+        }
+    }
+
+    @Test
+    void manifestLoadsSSTablesAfterRestart() throws Exception {
+
+        Path directory = Files.createTempDirectory("minilsm-test");
+
+        Options options = new Options(2, 2);
+
+        try (MiniLSM db = new MiniLSM(directory, options)) {
+
+            db.put("user1", "Alice".getBytes(StandardCharsets.UTF_8));
+            db.put("user2", "Bob".getBytes(StandardCharsets.UTF_8));
+
+            db.put("user1", "Ayoub".getBytes(StandardCharsets.UTF_8));
+            db.put("user3", "Charlie".getBytes(StandardCharsets.UTF_8));
+        }
+
+        // Verify that the Manifest exists.
+        assertTrue(Files.exists(directory.resolve("MANIFEST")));
+
+        try (MiniLSM db = new MiniLSM(directory, options)) {
+
+            assertArrayEquals(
+                    "Ayoub".getBytes(StandardCharsets.UTF_8),
+                    db.get("user1")
+            );
+
+            assertArrayEquals(
+                    "Bob".getBytes(StandardCharsets.UTF_8),
+                    db.get("user2")
+            );
+
+            assertArrayEquals(
+                    "Charlie".getBytes(StandardCharsets.UTF_8),
+                    db.get("user3")
             );
         }
     }
