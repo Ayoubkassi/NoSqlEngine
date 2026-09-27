@@ -107,4 +107,32 @@ class MiniLSMTest {
             );
         }
     }
+
+    @Test
+    void compactKeepsNewestValueAndTombstone() throws Exception {
+
+        Path directory = Files.createTempDirectory("minilsm-test");
+
+        Options options = new Options(2);
+
+        try (MiniLSM db = new MiniLSM(directory, options)) {
+
+            // First SSTable: user1 = Alice, user2 = Bob
+            db.put("user1", "Alice".getBytes(StandardCharsets.UTF_8));
+            db.put("user2", "Bob".getBytes(StandardCharsets.UTF_8));
+
+            // Second SSTable: user1 = Ayoub, user2 deleted
+            db.put("user1", "Ayoub".getBytes(StandardCharsets.UTF_8));
+            db.delete("user2");
+
+            db.compact();
+
+            assertArrayEquals(
+                    "Ayoub".getBytes(StandardCharsets.UTF_8),
+                    db.get("user1")
+            );
+
+            assertNull(db.get("user2"));
+        }
+    }
 }

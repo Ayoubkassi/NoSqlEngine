@@ -2,14 +2,11 @@ package org.example.core;
 
 import org.example.memtable.MemTableEntry;
 import org.example.memtable.Memtable;
-import org.example.sstable.SSTableEntry;
-import org.example.sstable.SSTableHandle;
-import org.example.sstable.SSTableMetadata;
-import org.example.sstable.SSTableReader;
-import org.example.sstable.SSTableWriter;
+import org.example.sstable.*;
 import org.example.wal.Operation;
 import org.example.wal.WriteAheadLog;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -217,6 +214,33 @@ public class MiniLSM implements AutoCloseable {
 
         // WAL can now be cleared
         wal.clear();
+    }
+
+    public synchronized void compact() throws IOException{
+        if(tables.size() < 2){
+            return;
+        }
+
+        int size = tables.size();
+
+        SSTableHandle older = tables.get(size-2);
+        SSTableHandle newer = tables.get(size-1);
+
+        Path outputFile = directory.resolve(
+                String.format("sstable-%06d.data",nextTableId++)
+        );
+
+        SSTableCompactor compactor = new SSTableCompactor(reader,writer);
+
+        SSTableMetadata metadata = compactor.compact(older.path(),newer.path(),outputFile);
+
+        tables.remove(size-1);
+        tables.remove(size-2);
+
+        tables.add(new SSTableHandle(outputFile,metadata));
+
+        Files.deleteIfExists(older.path());
+        Files.deleteIfExists(newer.path());
     }
 
     @Override
