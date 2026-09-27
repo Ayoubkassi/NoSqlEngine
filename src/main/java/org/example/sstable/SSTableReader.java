@@ -3,10 +3,12 @@ package org.example.sstable;
 import org.example.index.BloomFilter;
 import org.example.index.SparseIndex;
 
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
+import java.util.TreeMap;
 
 public class SSTableReader {
 
@@ -146,5 +148,45 @@ public class SSTableReader {
         }
 
         return null;
+    }
+
+    public Map<String, SSTableEntry> readAll(Path file) throws IOException{
+        Map<String, SSTableEntry> entries = new TreeMap<>();
+
+        try(DataInputStream in = new DataInputStream(
+                new BufferedInputStream(Files.newInputStream(file))
+        )){
+            while(true){
+                try{
+                    int keyLength = in.readInt();
+                    int valueLength = in.readInt();
+                    boolean tombstone = in.readBoolean();
+
+                    byte[] keyBytes = in.readNBytes(keyLength);
+
+                    if(keyBytes.length != keyLength){
+                        throw new IOException("Incomplete key");
+                    }
+
+                    String key = new String(keyBytes,StandardCharsets.UTF_8);
+
+                    if(tombstone){
+                        entries.put(key, SSTableEntry.deleted());
+                    }else{
+                        byte[] value = in.readNBytes(valueLength);
+
+                        if(value.length != valueLength){
+                            throw new IOException("Incomplete value");
+                        }
+
+                        entries.put(key, SSTableEntry.value(value));
+                    }
+
+                }catch (EOFException e){
+                    break;
+                }
+            }
+        }
+        return entries;
     }
 }
