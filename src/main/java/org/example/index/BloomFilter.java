@@ -10,7 +10,7 @@ public class BloomFilter {
     private final int numHashFunctions;
 
     public BloomFilter(int expectedElements){
-        this.numBits = expectedElements*10;
+        this.numBits = Math.max(1, expectedElements) * 10;
         this.numHashFunctions = 3;
         this.bits = new BitSet(numBits);
     }

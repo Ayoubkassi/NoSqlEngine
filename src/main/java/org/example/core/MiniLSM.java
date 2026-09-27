@@ -7,9 +7,7 @@ import org.example.sstable.*;
 import org.example.wal.Operation;
 import org.example.wal.WriteAheadLog;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -45,9 +43,9 @@ public class MiniLSM implements AutoCloseable {
         Path walPath = directory.resolve("wal.log");
         this.wal = new WriteAheadLog(walPath);
 
-        // Recover previous operations from WAL
+        // Recover SSTables from disk, then replay WAL
         loadSSTables();
-        recover();
+        recoverWal();
     }
 
     private void loadSSTables() throws IOException{
@@ -68,51 +66,6 @@ public class MiniLSM implements AutoCloseable {
             String id = name.replace("sstable-","").replace(".data","");
 
             nextTableId = Math.max(nextTableId,Integer.parseInt(id)+1);
-        }
-    }
-
-    private void recover() throws IOException {
-
-        recoverSSTables();
-
-        recoverWal();
-    }
-
-    private void recoverSSTables() throws IOException {
-
-        List<Path> sstableFiles = new ArrayList<>();
-
-        try (DirectoryStream<Path> stream =
-                     Files.newDirectoryStream(directory, "sstable-*.data")) {
-
-            for (Path file : stream) {
-                sstableFiles.add(file);
-            }
-        }
-
-        sstableFiles.sort(Path::compareTo);
-
-        for (Path file : sstableFiles) {
-
-            SSTableMetadata metadata = reader.loadMetadata(file);
-
-            tables.add(new SSTableHandle(file, metadata));
-
-            String fileName = file.getFileName().toString();
-
-            String prefix = "sstable-";
-            String suffix = ".data";
-
-            String idPart = fileName.substring(
-                    prefix.length(),
-                    fileName.length() - suffix.length()
-            );
-
-            int id = Integer.parseInt(idPart);
-
-            if (id >= nextTableId) {
-                nextTableId = id + 1;
-            }
         }
     }
 

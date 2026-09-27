@@ -15,7 +15,7 @@ import java.nio.file.Path;
 public class Main {
     public static void main(String[] args) throws Exception {
 
-        Path directory = Path.of("/Users/a.kassi/Desktop/NoSQLEngine/data");
+        Path directory = Path.of("data");
 
         Options options = new Options(3);
 
