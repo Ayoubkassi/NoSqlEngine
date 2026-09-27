@@ -1,15 +1,22 @@
 package org.example.core;
 
-public class Options {
-
-    private final int memTableMaxEntries;
-
+public record Options(
+        int memTableMaxEntries,
+        int maxSSTables
+) {
     public Options(int memTableMaxEntries){
-        this.memTableMaxEntries = memTableMaxEntries;
+        this(memTableMaxEntries,4);
     }
 
-    public int memTableMaxEntries(){
-        return memTableMaxEntries;
+    public Options{
+        if(memTableMaxEntries <= 0){
+            throw new IllegalArgumentException("memTableMaxEntries must be positive");
+        }
+
+        if(maxSSTables < 2){
+            throw new IllegalArgumentException("maxSStables must be at least 2");
+        }
     }
+
 }
 

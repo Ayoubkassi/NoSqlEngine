@@ -135,4 +135,65 @@ class MiniLSMTest {
             assertNull(db.get("user2"));
         }
     }
+
+    @Test
+    void automaticallyCompactsWhenSSTableLimitIsExceeded()
+            throws Exception {
+
+        Path directory = Files.createTempDirectory("minilsm-test");
+
+        // Flush after every 2 entries.
+        // Allow a maximum of 2 SSTables.
+        Options options = new Options(2, 2);
+
+        try (MiniLSM db = new MiniLSM(directory, options)) {
+
+            // SSTable 1
+            db.put("user1", "Alice".getBytes(StandardCharsets.UTF_8));
+            db.put("user2", "Bob".getBytes(StandardCharsets.UTF_8));
+
+            // SSTable 2
+            db.put("user1", "Ayoub".getBytes(StandardCharsets.UTF_8));
+            db.put("user3", "Charlie".getBytes(StandardCharsets.UTF_8));
+
+            // SSTable 3 triggers automatic compaction.
+            db.put("user4", "David".getBytes(StandardCharsets.UTF_8));
+            db.put("user5", "Emma".getBytes(StandardCharsets.UTF_8));
+
+            // The newest value must be preserved.
+            assertArrayEquals(
+                    "Ayoub".getBytes(StandardCharsets.UTF_8),
+                    db.get("user1")
+            );
+
+            assertArrayEquals(
+                    "Bob".getBytes(StandardCharsets.UTF_8),
+                    db.get("user2")
+            );
+
+            assertArrayEquals(
+                    "Emma".getBytes(StandardCharsets.UTF_8),
+                    db.get("user5")
+            );
+        }
+
+        // Verify that data is still readable after restart.
+        try (MiniLSM db = new MiniLSM(directory, options)) {
+
+            assertArrayEquals(
+                    "Ayoub".getBytes(StandardCharsets.UTF_8),
+                    db.get("user1")
+            );
+
+            assertArrayEquals(
+                    "Bob".getBytes(StandardCharsets.UTF_8),
+                    db.get("user2")
+            );
+
+            assertArrayEquals(
+                    "Emma".getBytes(StandardCharsets.UTF_8),
+                    db.get("user5")
+            );
+        }
+    }
 }
