@@ -1,5 +1,6 @@
 package org.example.core;
 
+import org.example.manifest.Manifest;
 import org.example.memtable.MemTableEntry;
 import org.example.memtable.Memtable;
 import org.example.sstable.*;
@@ -23,6 +24,7 @@ public class MiniLSM implements AutoCloseable {
     private final SSTableWriter writer;
     private final SSTableReader reader;
     private final WriteAheadLog wal;
+    private final Manifest manifest;
 
     private final List<SSTableHandle> tables = new ArrayList<>();
 
@@ -38,12 +40,35 @@ public class MiniLSM implements AutoCloseable {
         this.memTable = new Memtable();
         this.writer = new SSTableWriter();
         this.reader = new SSTableReader();
+        this.manifest = new Manifest(directory);
 
         Path walPath = directory.resolve("wal.log");
         this.wal = new WriteAheadLog(walPath);
 
         // Recover previous operations from WAL
+        loadSSTables();
         recover();
+    }
+
+    private void loadSSTables() throws IOException{
+        List<String> sstableFiles = manifest.load();
+
+        for(String filename: sstableFiles){
+            Path file = directory.resolve(filename);
+
+            if(!Files.exists(file))
+                throw new IOException("SSTable listed in manifest is missing: "+filename);
+
+            SSTableMetadata metadata = reader.loadMetadata(file);
+
+            tables.add(new SSTableHandle(file,metadata));
+
+            String name = file.getFileName().toString();
+
+            String id = name.replace("sstable-","").replace(".data","");
+
+            nextTableId = Math.max(nextTableId,Integer.parseInt(id)+1);
+        }
     }
 
     private void recover() throws IOException {
@@ -212,12 +237,23 @@ public class MiniLSM implements AutoCloseable {
         // Create a fresh MemTable
         memTable = new Memtable();
 
+        updateManifest();
+
         // WAL can now be cleared
         wal.clear();
 
         while(tables.size() > options.maxSSTables()){
             compact();
         }
+    }
+
+    private void updateManifest() throws IOException {
+
+        List<String> fileNames = tables.stream()
+                .map(table -> table.path().getFileName().toString())
+                .toList();
+
+        manifest.rewrite(fileNames);
     }
 
     public synchronized void compact() throws IOException{
@@ -242,6 +278,8 @@ public class MiniLSM implements AutoCloseable {
         tables.remove(size-2);
 
         tables.add(new SSTableHandle(outputFile,metadata));
+
+        updateManifest();
 
         Files.deleteIfExists(older.path());
         Files.deleteIfExists(newer.path());
