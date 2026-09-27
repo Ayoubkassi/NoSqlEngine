@@ -214,6 +214,10 @@ public class MiniLSM implements AutoCloseable {
 
         // WAL can now be cleared
         wal.clear();
+
+        while(tables.size() > options.maxSSTables()){
+            compact();
+        }
     }
 
     public synchronized void compact() throws IOException{
